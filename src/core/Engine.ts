@@ -41,6 +41,10 @@ export class Engine {
         // Instantiate the Player and pass the required dependencies
         this.player = new Player(this.camera, this.inputManager, this.scene);
 
+        // Visual debug: draw the player's AABB as a green wireframe
+        const boxHelper = new THREE.Box3Helper(this.player.getBoundingBox(), new THREE.Color(0x00ff00));
+        this.scene.add(boxHelper);
+
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 

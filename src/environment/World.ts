@@ -60,7 +60,7 @@ export class World {
         this.scene.add(gridHelper);
     }
 
-    public update(deltaTime: number): void {
+    public update(_deltaTime: number): void {
         // Animate environment elements here if needed later (e.g. moving clouds, day/night cycle)
     }
 }

@@ -1,15 +1,18 @@
 // src/entities/Player.ts
 import * as THREE from 'three';
 import { InputManager } from '../input/InputManager';
+import { PhysicsBody, PLAYER_HALF_EXTENTS, PLAYER_HEIGHT } from '../physics/PhysicsBody';
 
 export class Player {
     public body: THREE.Group;
 
     private camera: THREE.PerspectiveCamera;
     private inputManager: InputManager;
+    private physicsBody: PhysicsBody;
 
-    // Temporary configuration for testing
-    private moveSpeed: number = 8.0;
+    // Movement tuning
+    private acceleration: number = 50.0;  // How quickly the player reaches top speed
+    private maxSpeed: number = 8.0;       // Maximum horizontal speed (units/s)
     private lookSensitivity: number = 0.5;
 
     // Pitch constraints (slightly less than PI/2 to avoid gimbal lock/stuttering)
@@ -20,24 +23,43 @@ export class Player {
         this.camera = camera;
         this.inputManager = inputManager;
 
-        // 1. Create the physical body
-        this.body = new THREE.Group();
-        this.body.position.set(0, 2, 5); // Start at "eye level" above the floor
+        // 1. Create the physics body (AABB, velocity, etc.)
+        this.physicsBody = new PhysicsBody(PLAYER_HALF_EXTENTS);
 
-        // 2. Reset the camera and attach it to the body
+        // 2. Create the physical body group
+        this.body = new THREE.Group();
+        this.body.position.set(0, PLAYER_HEIGHT, 5); // Start at eye level above the floor
+
+        // 3. Reset the camera and attach it to the body
         // The camera's position is now relative to the body's center
         this.camera.position.set(0, 0, 0);
         this.camera.rotation.set(0, 0, 0);
 
         this.body.add(this.camera);
 
-        // 3. Add the player to the scene
+        // 4. Add the player to the scene
         scene.add(this.body);
+
+        // 5. Initialise the bounding box at the starting position
+        this.physicsBody.updateBoundingBox(this.body.position);
+    }
+
+    /**
+     * Returns the player's AABB for external use (debug helpers, etc.)
+     */
+    public getBoundingBox(): THREE.Box3 {
+        return this.physicsBody.boundingBox;
     }
 
     public update(deltaTime: number): void {
         this.handleRotation(deltaTime);
         this.handleMovement(deltaTime);
+
+        // Update the bounding box to match the new position
+        this.physicsBody.updateBoundingBox(this.body.position);
+
+        // Check for wall collisions (no colliders yet — placeholder)
+        this.physicsBody.checkCollisions([]);
     }
 
     private handleRotation(deltaTime: number): void {
@@ -62,26 +84,52 @@ export class Player {
 
     private handleMovement(deltaTime: number): void {
         const keys = this.inputManager.keys;
-        const direction = new THREE.Vector3(0, 0, 0);
+        const inputDirection = new THREE.Vector3(0, 0, 0);
 
         // Z-axis corresponds to Forward/Backward in Three.js (Negative Z is forward)
-        if (keys.forward) direction.z -= 1;
-        if (keys.backward) direction.z += 1;
+        if (keys.forward) inputDirection.z -= 1;
+        if (keys.backward) inputDirection.z += 1;
 
         // X-axis corresponds to Left/Right
-        if (keys.left) direction.x -= 1;
-        if (keys.right) direction.x += 1;
+        if (keys.left) inputDirection.x -= 1;
+        if (keys.right) inputDirection.x += 1;
 
-        // Normalize the vector so diagonal movement isn't 1.4x faster
-        if (direction.lengthSq() > 0) {
-            direction.normalize();
+        // Determine if any movement key is pressed
+        const isMoving = inputDirection.lengthSq() > 0;
+
+        if (isMoving) {
+            // Normalize so diagonal movement isn't 1.4x faster
+            inputDirection.normalize();
+
+            // Rotate the movement vector by the body's current Y-axis rotation (Yaw)
+            // so pressing 'W' moves us in the direction we are currently facing.
+            inputDirection.applyEuler(new THREE.Euler(0, this.body.rotation.y, 0));
+
+            // Apply acceleration to velocity
+            this.physicsBody.velocity.x += inputDirection.x * this.acceleration * deltaTime;
+            this.physicsBody.velocity.z += inputDirection.z * this.acceleration * deltaTime;
+
+            // Clamp horizontal speed to maxSpeed
+            const horizontalSpeed = Math.sqrt(
+                this.physicsBody.velocity.x ** 2 + this.physicsBody.velocity.z ** 2
+            );
+            if (horizontalSpeed > this.maxSpeed) {
+                const scale = this.maxSpeed / horizontalSpeed;
+                this.physicsBody.velocity.x *= scale;
+                this.physicsBody.velocity.z *= scale;
+            }
         }
 
-        // CRUCIAL: Rotate the movement vector by the body's current Y-axis rotation (Yaw).
-        // This ensures pressing 'W' moves us in the direction we are currently facing.
-        direction.applyEuler(new THREE.Euler(0, this.body.rotation.y, 0));
+        // Apply friction/damping when no input is given
+        this.physicsBody.applyFriction(deltaTime, isMoving);
 
-        // Move the body
-        this.body.position.addScaledVector(direction, this.moveSpeed * deltaTime);
+        // Apply gravity
+        this.physicsBody.applyGravity(deltaTime);
+
+        // Move the body by the current velocity
+        this.body.position.addScaledVector(this.physicsBody.velocity, deltaTime);
+
+        // Floor collision: snap to floor and zero Y velocity if below threshold
+        this.physicsBody.clampToFloor(this.body.position);
     }
 }
