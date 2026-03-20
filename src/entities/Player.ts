@@ -16,7 +16,7 @@ export class Player {
     // Movement tuning
     private acceleration: number = 50.0;  // How quickly the player reaches top speed
     private maxSpeed: number = 8.0;       // Maximum horizontal speed (units/s)
-    private lookSensitivity: number = 0.5;
+    private lookSensitivity: number = 0.008; // Adjust to your liking
 
     // Pitch constraints (slightly less than PI/2 to avoid gimbal lock/stuttering)
     private minPitch: number = -Math.PI / 2 + 0.05;
@@ -86,10 +86,12 @@ export class Player {
         const { movementX, movementY } = this.inputManager.mouse;
 
         // YAW: Rotate the entire body left and right
-        this.body.rotation.y -= movementX * this.lookSensitivity * deltaTime;
+        // REMOVED: deltaTime 
+        this.body.rotation.y -= movementX * this.lookSensitivity;
 
         // PITCH: Rotate only the camera up and down
-        this.camera.rotation.x -= movementY * this.lookSensitivity * deltaTime;
+        // REMOVED: deltaTime 
+        this.camera.rotation.x -= movementY * this.lookSensitivity;
 
         // Clamp the pitch to prevent the camera from flipping backwards
         this.camera.rotation.x = THREE.MathUtils.clamp(

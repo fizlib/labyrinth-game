@@ -17,21 +17,30 @@ export interface MinimapConfig {
     playerColor?: string;
     /** Color for the player direction indicator */
     directionColor?: string;
+    /** Color for the player field-of-view cone */
+    viewConeColor?: string;
 }
 
 const DEFAULT_CONFIG: Required<MinimapConfig> = {
     canvasSize: 220,
-    wallColor: '#1a1a2e',
-    floorColor: '#16213e',
-    centerColor: '#e2b714',
-    spawnColor: '#e74c3c',
+    // UI IMPROVEMENTS: Higher contrast. Transparent floor allows the CSS 
+    // background-color (rgba(0,0,0, 0.6)) to show through beautifully.
+    wallColor: 'rgba(200, 220, 255, 0.8)', // Frosted bright blue/white
+    floorColor: 'transparent',
+    centerColor: 'rgba(226, 183, 20, 0.4)', // Semi-transparent gold
+    spawnColor: 'rgba(231, 76, 60, 0.9)',
     playerColor: '#00ff88',
     directionColor: '#00ff88',
+    viewConeColor: 'rgba(0, 255, 136, 0.25)', // Transparent neon green
 };
 
 export class Minimap {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
+
+    // An offscreen canvas to cache the static maze (Improves performance)
+    private staticMapCanvas: HTMLCanvasElement;
+
     private config: Required<MinimapConfig>;
 
     private mazeGrid: number[][];
@@ -57,7 +66,7 @@ export class Minimap {
         this.spawns = spawns;
         this.cellPx = this.config.canvasSize / this.mazeSize;
 
-        // Create and style the canvas element
+        // Create and style the main canvas element
         this.canvas = document.createElement('canvas');
         this.canvas.width = this.config.canvasSize;
         this.canvas.height = this.config.canvasSize;
@@ -66,38 +75,44 @@ export class Minimap {
 
         this.ctx = this.canvas.getContext('2d')!;
 
-        // Draw the static maze layer once
-        this.drawMaze();
+        // Initialize the offscreen static map
+        this.staticMapCanvas = document.createElement('canvas');
+        this.staticMapCanvas.width = this.config.canvasSize;
+        this.staticMapCanvas.height = this.config.canvasSize;
+
+        // Render the static parts of the map ONCE
+        this.drawStaticMaze();
     }
 
     /**
-     * Draw the static maze grid (walls, floor, center, spawns).
-     * Called once at initialization.
+     * Renders the static maze to an offscreen canvas to save frame budget.
      */
-    private drawMaze(): void {
-        const { ctx, cellPx, mazeSize, config } = this;
+    private drawStaticMaze(): void {
+        const ctx = this.staticMapCanvas.getContext('2d')!;
+        const { cellPx, mazeSize, config } = this;
 
         for (let r = 0; r < mazeSize; r++) {
             for (let c = 0; c < mazeSize; c++) {
                 const isWall = this.mazeGrid[r][c] === 1;
 
-                // Determine color
                 if (isWall) {
                     ctx.fillStyle = config.wallColor;
+                    ctx.fillRect(c * cellPx, r * cellPx, cellPx + 0.5, cellPx + 0.5);
                 } else if (this.isCenterRoom(r, c)) {
                     ctx.fillStyle = config.centerColor;
-                } else {
+                    ctx.fillRect(c * cellPx, r * cellPx, cellPx + 0.5, cellPx + 0.5);
+                } else if (config.floorColor !== 'transparent' && config.floorColor !== 'rgba(0,0,0,0)') {
+                    // Only draw floors if it's not transparent
                     ctx.fillStyle = config.floorColor;
+                    ctx.fillRect(c * cellPx, r * cellPx, cellPx + 0.5, cellPx + 0.5);
                 }
-
-                ctx.fillRect(c * cellPx, r * cellPx, cellPx + 0.5, cellPx + 0.5);
             }
         }
 
         // Draw spawn markers
         for (const spawn of this.spawns) {
             ctx.fillStyle = config.spawnColor;
-            const spawnPx = Math.max(cellPx * 1.5, 4);
+            const spawnPx = Math.max(cellPx * 1.5, 3);
             ctx.beginPath();
             ctx.arc(
                 spawn.col * cellPx + cellPx / 2,
@@ -110,9 +125,6 @@ export class Minimap {
         }
     }
 
-    /**
-     * Check if a cell is part of the central room (5×5 area).
-     */
     private isCenterRoom(row: number, col: number): boolean {
         const roomHalf = 2;
         return (
@@ -125,15 +137,13 @@ export class Minimap {
 
     /**
      * Called every frame to update the player's position and facing on the minimap.
-     * @param worldX Player's X position in world units
-     * @param worldZ Player's Z position in world units
-     * @param yaw Player's Y-axis rotation in radians
      */
     public update(worldX: number, worldZ: number, yaw: number): void {
         const { ctx, cellPx, config } = this;
 
-        // Redraw the maze (clears old player dot)
-        this.drawMaze();
+        // Clear the main canvas and redraw the cached static map
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.drawImage(this.staticMapCanvas, 0, 0);
 
         // Convert world position to minimap pixel position
         const mazeCol = worldX / CELL_SIZE;
@@ -142,21 +152,36 @@ export class Minimap {
         const px = mazeCol * cellPx;
         const py = mazeRow * cellPx;
 
-        // Draw direction indicator (line showing facing)
-        const dirLength = Math.max(cellPx * 3, 8);
-        const dirEndX = px + Math.sin(yaw) * dirLength;  // sin because Three.js yaw
-        const dirEndY = py - Math.cos(yaw) * dirLength;  // -cos for forward (-Z in Three.js)
+        // --- FIXING THE ROTATION ---
+        // Canvas 0 angle points RIGHT (+X). Three.js 0 yaw points FORWARD (-Z).
+        // A forward view on the canvas is UP (-Y), which corresponds to -Math.PI / 2.
+        // We subtract the `yaw` so that left/right turns map perfectly to 2D counter-clockwise rotations.
+        const canvasAngle = -Math.PI / 2 - yaw;
+
+        // 1. Draw View Cone (FOV)
+        const viewRadius = Math.max(cellPx * 5, 20); // Length of the cone
+        const fov = Math.PI / 2.5; // About 72 degrees wide
+
+        ctx.fillStyle = config.viewConeColor;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.arc(px, py, viewRadius, canvasAngle - fov / 2, canvasAngle + fov / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // 2. Draw Direction Indicator Line
+        const dirLength = Math.max(cellPx * 2, 8);
+        const dirEndX = px + Math.cos(canvasAngle) * dirLength;
+        const dirEndY = py + Math.sin(canvasAngle) * dirLength;
 
         ctx.strokeStyle = config.directionColor;
         ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.7;
         ctx.beginPath();
         ctx.moveTo(px, py);
         ctx.lineTo(dirEndX, dirEndY);
         ctx.stroke();
-        ctx.globalAlpha = 1.0;
 
-        // Draw player dot
+        // 3. Draw Player Dot
         const dotRadius = Math.max(cellPx * 1.2, 3);
         ctx.fillStyle = config.playerColor;
         ctx.beginPath();
@@ -166,17 +191,15 @@ export class Minimap {
         // Outer glow ring
         ctx.strokeStyle = config.playerColor;
         ctx.lineWidth = 1.5;
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = 0.8;
         ctx.beginPath();
         ctx.arc(px, py, dotRadius + 2, 0, Math.PI * 2);
         ctx.stroke();
         ctx.globalAlpha = 1.0;
     }
 
-    /**
-     * Remove the minimap from the DOM.
-     */
     public dispose(): void {
         this.canvas.remove();
+        this.staticMapCanvas.remove();
     }
 }
