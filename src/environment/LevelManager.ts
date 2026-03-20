@@ -1,27 +1,10 @@
 // src/environment/LevelManager.ts
 import * as THREE from 'three';
+import { generateMaze, type MazeResult } from './MazeGenerator';
 
 // --- Tunable Constants ---
 export const CELL_SIZE = 2;    // Width & depth of each grid cell in world units
 export const WALL_HEIGHT = 3;  // Height of wall blocks
-
-/**
- * Hardcoded 10×10 maze grid.
- * 1 = wall, 0 = walkable floor.
- * Fully enclosed perimeter with a few internal walls for testing.
- */
-const MAZE_DATA: number[][] = [
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 1, 1, 0, 1, 1, 0, 0, 1],
-    [1, 0, 1, 0, 0, 0, 1, 0, 0, 1],
-    [1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-    [1, 0, 1, 0, 1, 0, 1, 1, 0, 1],
-    [1, 0, 1, 0, 0, 0, 0, 1, 0, 1],
-    [1, 0, 0, 0, 1, 1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-];
 
 export class LevelManager {
     /** AABB colliders for every wall cell — used by the physics system */
@@ -33,9 +16,27 @@ export class LevelManager {
     /** Number of columns in the maze grid */
     public readonly cols: number;
 
-    constructor() {
-        this.rows = MAZE_DATA.length;
-        this.cols = MAZE_DATA[0].length;
+    /** The generated maze result */
+    private mazeResult: MazeResult;
+
+    constructor(size: number = 41) {
+        this.mazeResult = generateMaze(size);
+        this.rows = this.mazeResult.size;
+        this.cols = this.mazeResult.size;
+    }
+
+    /**
+     * Returns the raw maze grid (for minimap rendering).
+     */
+    public getMazeGrid(): number[][] {
+        return this.mazeResult.grid;
+    }
+
+    /**
+     * Returns the generated maze result (grid, center, spawns).
+     */
+    public getMazeResult(): MazeResult {
+        return this.mazeResult;
     }
 
     /**
@@ -43,11 +44,13 @@ export class LevelManager {
      * and add everything to the scene.
      */
     public buildMaze(scene: THREE.Scene): void {
+        const grid = this.mazeResult.grid;
+
         // 1. Count how many wall cells exist so we can size the InstancedMesh
         let wallCount = 0;
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
-                if (MAZE_DATA[row][col] === 1) wallCount++;
+                if (grid[row][col] === 1) wallCount++;
             }
         }
 
@@ -70,7 +73,7 @@ export class LevelManager {
 
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
-                if (MAZE_DATA[row][col] !== 1) continue;
+                if (grid[row][col] !== 1) continue;
 
                 // World position: centre of the wall block
                 const x = col * CELL_SIZE + CELL_SIZE / 2;
@@ -102,18 +105,21 @@ export class LevelManager {
     }
 
     /**
-     * Returns a safe spawn position on a known walkable cell (row 1, col 1).
-     * The position is at eye-level above the floor, centred in the cell.
+     * Returns spawn positions for all 4 teams.
+     * Each position is at player eye-level, centred in the spawn cell.
+     */
+    public getSpawnPositions(playerHeight: number): THREE.Vector3[] {
+        return this.mazeResult.spawns.map(spawn => new THREE.Vector3(
+            spawn.col * CELL_SIZE + CELL_SIZE / 2,
+            playerHeight,
+            spawn.row * CELL_SIZE + CELL_SIZE / 2
+        ));
+    }
+
+    /**
+     * Returns the first spawn position (for the local player).
      */
     public getSpawnPosition(playerHeight: number): THREE.Vector3 {
-        // Row 1, Col 1 is guaranteed to be 0 (walkable) in our grid
-        const spawnRow = 1;
-        const spawnCol = 1;
-
-        return new THREE.Vector3(
-            spawnCol * CELL_SIZE + CELL_SIZE / 2,
-            playerHeight,
-            spawnRow * CELL_SIZE + CELL_SIZE / 2
-        );
+        return this.getSpawnPositions(playerHeight)[0];
     }
 }
