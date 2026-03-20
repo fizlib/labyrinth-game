@@ -1,14 +1,17 @@
-import './style.css'; // Add a basic reset here (margin: 0, overflow: hidden)
+// src/main.ts
+import './style.css';
 import { Engine } from './core/Engine';
+import { InputManager } from './input/InputManager';
 
-// Wait for DOM to load
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.createElement('canvas');
     document.body.appendChild(canvas);
 
-    // Initialize the core engine
-    const engine = new Engine(canvas);
+    // Initialize the Input Manager
+    const inputManager = new InputManager(canvas);
 
-    // Start the game loop
+    // Pass the input manager into the core engine
+    const engine = new Engine(canvas, inputManager);
+
     engine.start();
 });

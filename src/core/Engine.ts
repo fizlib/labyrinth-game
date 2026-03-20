@@ -1,5 +1,7 @@
+// src/core/Engine.ts
 import * as THREE from 'three';
 import { World } from '../environment/World';
+import { InputManager } from '../input/InputManager';
 
 export class Engine {
     public scene: THREE.Scene;
@@ -10,51 +12,36 @@ export class Engine {
     private clock: THREE.Clock;
     private isRunning: boolean = false;
 
-    constructor(canvas: HTMLCanvasElement) {
-        // 1. Scene Setup
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x111111); // Dark atmospheric background
-        this.scene.fog = new THREE.FogExp2(0x111111, 0.02); // Good for labyrinth atmosphere
+    // Add reference to our InputManager
+    private inputManager: InputManager;
 
-        // 2. Camera Setup
-        this.camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
+    constructor(canvas: HTMLCanvasElement, inputManager: InputManager) {
+        this.inputManager = inputManager;
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x111111);
+        this.scene.fog = new THREE.FogExp2(0x111111, 0.02);
+
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, 5, 10);
         this.camera.lookAt(0, 0, 0);
 
-        // 3. Renderer Setup (Optimized)
-        this.renderer = new THREE.WebGLRenderer({
-            canvas,
-            antialias: true,
-            powerPreference: 'high-performance' // Hints browser to use dedicated GPU
-        });
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        // Cap pixel ratio to 2 for performance on high-DPI (Retina) screens
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-        // Modern lighting/color configurations
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // 4. Initialize Utilities
         this.clock = new THREE.Clock();
-
-        // 5. Build the static environment
         this.world = new World(this.scene);
 
-        // 6. Event Listeners
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
 
     private onWindowResize(): void {
         const width = window.innerWidth;
         const height = window.innerHeight;
-
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
@@ -75,14 +62,21 @@ export class Engine {
     private tick(): void {
         if (!this.isRunning) return;
 
-        // Calculate delta time (time between frames)
         const deltaTime = this.clock.getDelta();
 
-        // TODO: In the future, pass deltaTime to state/physics updates here
-        // this.gameState.update(deltaTime);
-        this.world.update(deltaTime);
+        // -------------------------------------------------------------
+        // TEMPORARY CONSOLE LOG (To prove InputManager works)
+        // -------------------------------------------------------------
+        if (this.inputManager.keys.forward || this.inputManager.mouse.movementX !== 0) {
+            console.log(`W Key: ${this.inputManager.keys.forward} | Mouse Delta X: ${this.inputManager.mouse.movementX}, Y: ${this.inputManager.mouse.movementY}`);
+        }
 
-        // Render the scene
+        this.world.update(deltaTime);
         this.renderer.render(this.scene, this.camera);
+
+        // -------------------------------------------------------------
+        // FRAME CLEANUP: Reset mouse deltas for the next frame
+        // -------------------------------------------------------------
+        this.inputManager.resetPerFrameData();
     }
 }
