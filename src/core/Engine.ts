@@ -2,7 +2,9 @@
 import * as THREE from 'three';
 import { World } from '../environment/World';
 import { InputManager } from '../input/InputManager';
-import { Player } from '../entities/Player'; // Import the new Player class
+import { Player } from '../entities/Player';
+import { LevelManager } from '../environment/LevelManager';
+import { PLAYER_HEIGHT } from '../physics/PhysicsBody';
 
 export class Engine {
     public scene: THREE.Scene;
@@ -10,11 +12,12 @@ export class Engine {
     public renderer: THREE.WebGLRenderer;
 
     private world: World;
+    private levelManager: LevelManager;
     private clock: THREE.Clock;
     private isRunning: boolean = false;
 
     private inputManager: InputManager;
-    private player: Player; // Add player reference
+    private player: Player;
 
     constructor(canvas: HTMLCanvasElement, inputManager: InputManager) {
         this.inputManager = inputManager;
@@ -38,8 +41,18 @@ export class Engine {
         this.clock = new THREE.Clock();
         this.world = new World(this.scene);
 
+        // Build the labyrinth
+        this.levelManager = new LevelManager();
+        this.levelManager.buildMaze(this.scene);
+
         // Instantiate the Player and pass the required dependencies
         this.player = new Player(this.camera, this.inputManager, this.scene);
+
+        // Place the player at a safe spawn point inside the maze
+        this.player.setSpawnPosition(this.levelManager.getSpawnPosition(PLAYER_HEIGHT));
+
+        // Give the player the wall colliders so physics can resolve collisions
+        this.player.setColliders(this.levelManager.colliders);
 
         // Visual debug: draw the player's AABB as a green wireframe
         const boxHelper = new THREE.Box3Helper(this.player.getBoundingBox(), new THREE.Color(0x00ff00));

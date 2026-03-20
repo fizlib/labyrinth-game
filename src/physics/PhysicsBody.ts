@@ -93,19 +93,62 @@ export class PhysicsBody {
     }
 
     /**
-     * Placeholder for AABB collision testing against an array of wall colliders.
-     * Returns the list of collider boxes that intersect with this body's bounding box.
-     * Will be fleshed out when walls are added to the labyrinth.
+     * Test the player's AABB against all wall colliders and push-back
+     * along the axis of least penetration so the player stops flush
+     * against the wall without bouncing or getting stuck.
+     *
+     * The position vector is mutated in-place for each resolved collision,
+     * and the bounding box is re-synced after every correction so that
+     * corner cases (two walls meeting) are handled correctly.
      */
-    public checkCollisions(colliders: THREE.Box3[]): THREE.Box3[] {
-        const intersecting: THREE.Box3[] = [];
-
+    public resolveCollisions(position: THREE.Vector3, colliders: THREE.Box3[]): void {
         for (const collider of colliders) {
-            if (this.boundingBox.intersectsBox(collider)) {
-                intersecting.push(collider);
+            // Re-sync AABB before each test (position may have shifted from a prior correction)
+            this.updateBoundingBox(position);
+
+            if (!this.boundingBox.intersectsBox(collider)) continue;
+
+            // Compute penetration depth on each axis
+            const overlapX = Math.min(
+                this.boundingBox.max.x - collider.min.x,
+                collider.max.x - this.boundingBox.min.x
+            );
+            const overlapZ = Math.min(
+                this.boundingBox.max.z - collider.min.z,
+                collider.max.z - this.boundingBox.min.z
+            );
+
+            // Push back along the axis of LEAST penetration (most natural feel)
+            if (overlapX < overlapZ) {
+                // Resolve on X axis
+                const playerCenterX = (this.boundingBox.min.x + this.boundingBox.max.x) / 2;
+                const colliderCenterX = (collider.min.x + collider.max.x) / 2;
+
+                if (playerCenterX < colliderCenterX) {
+                    // Player is to the LEFT of the wall → push left
+                    position.x -= overlapX;
+                } else {
+                    // Player is to the RIGHT of the wall → push right
+                    position.x += overlapX;
+                }
+                this.velocity.x = 0;
+            } else {
+                // Resolve on Z axis
+                const playerCenterZ = (this.boundingBox.min.z + this.boundingBox.max.z) / 2;
+                const colliderCenterZ = (collider.min.z + collider.max.z) / 2;
+
+                if (playerCenterZ < colliderCenterZ) {
+                    // Player is in FRONT of the wall → push forward (negative Z)
+                    position.z -= overlapZ;
+                } else {
+                    // Player is BEHIND the wall → push backward (positive Z)
+                    position.z += overlapZ;
+                }
+                this.velocity.z = 0;
             }
         }
 
-        return intersecting;
+        // Final sync after all corrections
+        this.updateBoundingBox(position);
     }
 }

@@ -10,6 +10,9 @@ export class Player {
     private inputManager: InputManager;
     private physicsBody: PhysicsBody;
 
+    /** Wall AABB colliders passed in from the level */
+    private colliders: THREE.Box3[] = [];
+
     // Movement tuning
     private acceleration: number = 50.0;  // How quickly the player reaches top speed
     private maxSpeed: number = 8.0;       // Maximum horizontal speed (units/s)
@@ -28,10 +31,9 @@ export class Player {
 
         // 2. Create the physical body group
         this.body = new THREE.Group();
-        this.body.position.set(0, PLAYER_HEIGHT, 5); // Start at eye level above the floor
+        this.body.position.set(0, PLAYER_HEIGHT, 5); // Default spawn, overridden by setSpawnPosition
 
         // 3. Reset the camera and attach it to the body
-        // The camera's position is now relative to the body's center
         this.camera.position.set(0, 0, 0);
         this.camera.rotation.set(0, 0, 0);
 
@@ -41,6 +43,21 @@ export class Player {
         scene.add(this.body);
 
         // 5. Initialise the bounding box at the starting position
+        this.physicsBody.updateBoundingBox(this.body.position);
+    }
+
+    /**
+     * Set the wall colliders that the player will be tested against each frame.
+     */
+    public setColliders(colliders: THREE.Box3[]): void {
+        this.colliders = colliders;
+    }
+
+    /**
+     * Move the player to a specific spawn position.
+     */
+    public setSpawnPosition(position: THREE.Vector3): void {
+        this.body.position.copy(position);
         this.physicsBody.updateBoundingBox(this.body.position);
     }
 
@@ -58,8 +75,8 @@ export class Player {
         // Update the bounding box to match the new position
         this.physicsBody.updateBoundingBox(this.body.position);
 
-        // Check for wall collisions (no colliders yet — placeholder)
-        this.physicsBody.checkCollisions([]);
+        // Resolve wall collisions (pushback along axis of least penetration)
+        this.physicsBody.resolveCollisions(this.body.position, this.colliders);
     }
 
     private handleRotation(deltaTime: number): void {
