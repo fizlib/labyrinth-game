@@ -1,0 +1,12 @@
+/* src/style.css */
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #000;
+    /* Fallback background color */
+}
+
+canvas {
+    display: block;
+    /* Removes the tiny scrollbar caused by inline canvas elements */
+}
