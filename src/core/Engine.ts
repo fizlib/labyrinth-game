@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { World } from '../environment/World';
 import { InputManager } from '../input/InputManager';
+import { Player } from '../entities/Player'; // Import the new Player class
 
 export class Engine {
     public scene: THREE.Scene;
@@ -12,8 +13,8 @@ export class Engine {
     private clock: THREE.Clock;
     private isRunning: boolean = false;
 
-    // Add reference to our InputManager
     private inputManager: InputManager;
+    private player: Player; // Add player reference
 
     constructor(canvas: HTMLCanvasElement, inputManager: InputManager) {
         this.inputManager = inputManager;
@@ -23,8 +24,9 @@ export class Engine {
         this.scene.fog = new THREE.FogExp2(0x111111, 0.02);
 
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(0, 5, 10);
-        this.camera.lookAt(0, 0, 0);
+
+        // NOTE: We removed camera.position.set() and camera.lookAt() here.
+        // The Player class now dictates where the camera is and where it looks.
 
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -35,6 +37,9 @@ export class Engine {
 
         this.clock = new THREE.Clock();
         this.world = new World(this.scene);
+
+        // Instantiate the Player and pass the required dependencies
+        this.player = new Player(this.camera, this.inputManager, this.scene);
 
         window.addEventListener('resize', this.onWindowResize.bind(this));
     }
@@ -64,19 +69,14 @@ export class Engine {
 
         const deltaTime = this.clock.getDelta();
 
-        // -------------------------------------------------------------
-        // TEMPORARY CONSOLE LOG (To prove InputManager works)
-        // -------------------------------------------------------------
-        if (this.inputManager.keys.forward || this.inputManager.mouse.movementX !== 0) {
-            console.log(`W Key: ${this.inputManager.keys.forward} | Mouse Delta X: ${this.inputManager.mouse.movementX}, Y: ${this.inputManager.mouse.movementY}`);
-        }
-
+        // Update logic modules
+        this.player.update(deltaTime);
         this.world.update(deltaTime);
+
+        // Render the frame
         this.renderer.render(this.scene, this.camera);
 
-        // -------------------------------------------------------------
-        // FRAME CLEANUP: Reset mouse deltas for the next frame
-        // -------------------------------------------------------------
+        // Clean up per-frame input data (mouse deltas)
         this.inputManager.resetPerFrameData();
     }
 }
